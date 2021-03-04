@@ -53,6 +53,14 @@ namespace DynaCulture.Data
 
             // Reset between sessions to avoid culture cross contamination
             DynaCultureManager.Reset();
+
+            // clean up corrupted troops from previous sessions, if they exist
+            foreach (var party in Campaign.Current.MobileParties)
+                RemoveCorruptedTroops(party);
+
+            // clean up corrupted recruits from previous sessions, if they exist
+            foreach (var settlement in Campaign.Current.Settlements)
+                RemoveCorruptedRecruits(settlement);
         }
 
         void initializeAllSettlementCultures()
@@ -71,14 +79,6 @@ namespace DynaCulture.Data
             }
 
             first = false;
-
-            // clean up corrupted troops from previous sessions, if they exist
-            foreach (var party in Campaign.Current.MobileParties)
-                RemoveCorruptedTroops(party);
-
-            // clean up corrupted recruits from previous sessions, if they exist
-            foreach (var settlement in Campaign.Current.Settlements)
-                RemoveCorruptedRecruits(settlement);
         }
 
         public void DailyTickSettlementMod(Settlement settlement)
@@ -133,6 +133,7 @@ namespace DynaCulture.Data
         {
             try
             {
+                RemoveCorruptedPrisoners(mobileParty);
                 if (mobileParty.MemberRoster.Count == 0)
                     return;
 
@@ -183,6 +184,36 @@ namespace DynaCulture.Data
             catch
             {
                 InformationManager.DisplayMessage(new InformationMessage(new TextObject($"(DynaCulture) Error attempting to remove corrupted recruits from {settlement.Name}.", (Dictionary<string, object>)null).ToString(), Colors.Yellow));
+            }
+        }
+
+        public void RemoveCorruptedPrisoners(MobileParty mobileParty)
+        {
+            try
+            {
+                if (mobileParty.PrisonRoster.Count == 0)
+                    return;
+
+                // search for corrupted troops in the internal member "data" of TroopRoster
+                TroopRosterElement[] troops = (TroopRosterElement[])mobileParty.PrisonRoster.GetType().GetField("data", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance).GetValue(mobileParty.PrisonRoster);
+                var characterObjects = troops.Where(t => t.Number > 0 && t.Character?.Age == 0f).Select(t => t.Character).ToList();
+
+                if (characterObjects.Any())
+                {
+                    // delete them
+                    foreach (CharacterObject troop in characterObjects)
+                    {
+                        mobileParty.PrisonRoster.RemoveTroop(troop, mobileParty.PrisonRoster.GetTroopCount(troop));
+                    }
+
+                    // report to user
+                    if (Settings.Instance.ShowCorruptedTroopMessage)
+                        InformationManager.DisplayMessage(new InformationMessage(new TextObject($"(DynaCulture) Corrupted prisoners were cleansed from {mobileParty.Name} party.", (Dictionary<string, object>)null).ToString(), Colors.Yellow));
+                }
+            }
+            catch
+            {
+                InformationManager.DisplayMessage(new InformationMessage(new TextObject($"(DynaCulture) Error attempting to cleanse corrupted prisoners from {mobileParty.Name} party.", (Dictionary<string, object>)null).ToString(), Colors.Yellow));
             }
         }
 
